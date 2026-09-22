@@ -16,3 +16,4 @@ static/node_modules/
 *.zip
 .env
 .env.*
+.tiktok-runtime*.json

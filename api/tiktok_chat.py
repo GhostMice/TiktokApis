@@ -12,9 +12,10 @@ from loguru import logger
 from protobuf_to_dict import protobuf_to_dict
 
 from api.tiktok import TiktokAPI
+from builder.auth import BrowserEvidenceError, TiktokAuth
 from websocket import WebSocketApp
 from urllib.parse import urlencode
-from utils.dy_utils import trans_cookies, send_common_message, send_strangerconversation_msg, send_live_room_message
+from utils.tiktok_utils import trans_cookies, send_common_message, send_strangerconversation_msg, send_live_room_message
 import static.Tiktok_Request_pb2 as Tiktok_Request
 
 BASE_URL = "wss://im-ws.tiktok.com/ws/v2"
@@ -22,8 +23,13 @@ BASE_URL = "wss://im-ws.tiktok.com/ws/v2"
 
 class TiktokSendMsgWs:
 
-    def __init__(self, cookies_str, prefix=""):
-        self.tiktok_api = TiktokAPI()
+    def __init__(self, cookies_str="", prefix="", *, auth=None):
+        # The old class opened a long-running socket with static Chrome-132
+        # fields.  It now delegates one-shot sends to the current
+        # TiktokWebAPI command-100 implementation; live browser evidence is
+        # still required by that implementation, so construction is safe.
+        self.auth = auth or TiktokAuth.from_cookie(cookies_str)
+        self.tiktok_api = TiktokAPI(self.auth)
         self.ws = None
         # 今天是否还能发送消息
         self.state = 0
@@ -31,13 +37,12 @@ class TiktokSendMsgWs:
         self.prefix = prefix
         self.error_times = 0
         self.author_url = 'https://www.tiktok.com/@cato_ovo'
-        self.cookies_str = cookies_str
-        self.cookies = trans_cookies(cookies_str)
-        self.access_key = self.generate_access_key()
-        self.msToken = self.cookies["msToken"]
+        self.cookies_str = self.auth.cookie_str
+        self.cookies = trans_cookies(self.cookies_str)
+        self.access_key = ""
+        self.msToken = self.auth.ms_token
         self.verifyFp = self.cookies["s_v_web_id"] if "s_v_web_id" in self.cookies else ''
-        _, res_text = self.tiktok_api.get_user_info_and_text(self.author_url, cookies_str)
-        self.myid = re.findall(r'"uid":"(.*?)","', res_text)[0]
+        self.myid = self.auth.odin_id
 
     def generate_access_key(self):
         app_key = 'e1bd35ec9db7b8d846de66ed140b1ad9'
@@ -112,34 +117,10 @@ class TiktokSendMsgWs:
             self.start_ws()
 
     def start_ws(self):
-        PARAMS = {
-            "aid": 1459,
-            "fpid": 9,
-            "access_key": self.access_key,
-            "device_platform": "web",
-            "ttwid": urllib.parse.unquote(self.cookies["ttwid"]),
-            "Web-Sdk-Ms-Token": self.cookies["msToken"],
-        }
-        encoded_params = urlencode(PARAMS)
-        url = f"{BASE_URL}?{encoded_params}"
-        self.ws = WebSocketApp(
-            url,
-            header={
-                'Pragma': 'no-cache',
-                'Accept-Language': 'zh-CN,zh;q=0.9,en;q=0.8,en-GB;q=0.7,en-US;q=0.6',
-                'User-Agent': "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:109.0) Gecko/20100101 Firefox/117.0",
-                'Upgrade': 'websocket',
-                'Cache-Control': 'no-cache',
-                'Connection': 'Upgrade',
-            },
-            cookie=self.cookies_str,
-            on_open=self.on_open,
-            on_close=self.on_close,
-            on_message=self.on_message,
-            on_error=self.on_error,
+        raise BrowserEvidenceError(
+            "旧版长连接入口已停用；请调用 TiktokWebAPI.send_im_message，"
+            "由当前浏览器 wid、header map、ticket-guard 和 command-100 帧建立一次性连接"
         )
-        # self.ws.run_forever(origin="https://www.tiktok.com", proxy_type="http", http_proxy_host="127.0.0.1", http_proxy_port=7890)
-        self.ws.run_forever(origin="https://www.tiktok.com")
 
     def build_webcast_msg(self, user_url):
         res = self.tiktok_api.get_user_live_info(user_url, self.cookies_str)
@@ -172,17 +153,15 @@ class TiktokSendMsgWs:
         return msg
 
     def send_message(self, toid, message):
-        send_common_message(self, self.myid, toid, message)
-        send_common_message(self, toid, self.myid, message)
+        raise BrowserEvidenceError(
+            "请调用 TiktokWebAPI.send_im_message，显式传入浏览器 conversation_short_id；"
+            "旧接口没有该字段，拒绝猜测或补齐"
+        )
 
     def send_live_message(self, toid, user_url):
-        msg = 'hi how are you~ Follow the live broadcast room to receive the treasure chest.'
-        send_common_message(self, self.myid, toid, msg)
-        send_common_message(self, toid, self.myid, msg)
-
-        message = self.build_webcast_msg(user_url)
-        send_live_room_message(self, self.myid, toid, message)
-        send_live_room_message(self, toid, self.myid, message)
+        raise BrowserEvidenceError(
+            "直播分享写请求尚未完成 TikTok Chrome 抓包与纯计算迁移，已 fail-closed；不会发送旧版静态 X-Bogus"
+        )
 
 if __name__ == "__main__":
     cookies_str = r''
