@@ -1,35 +1,13 @@
 import re
-import sys
 import time
 import json
 import random
 import base64
 import urllib
 import uuid
-from os import path
 import static.Tiktok_Request_pb2 as Tiktok_Request
 import requests
 requests.packages.urllib3.disable_warnings()
-import subprocess
-from functools import partial
-
-subprocess.Popen = partial(subprocess.Popen, encoding="utf-8")
-import execjs
-
-if getattr(sys, 'frozen', None):
-    basedir = sys._MEIPASS
-else:
-    basedir = path.dirname(__file__)
-
-
-try:
-    node_modules = path.join(basedir, 'static', 'node_modules')
-    tiktok_path = path.join(basedir, 'static', 'tiktok.js')
-    tiktok_js = execjs.compile(open(tiktok_path, 'r', encoding='gb18030').read(), cwd=node_modules)
-except:
-    node_modules = path.join(basedir, '..', 'static', 'node_modules')
-    tiktok_path = path.join(basedir, '..', 'static', 'tiktok.js')
-    tiktok_js = execjs.compile(open(tiktok_path, 'r', encoding='gb18030').read(), cwd=node_modules)
 
 
 def trans_cookies(cookies_str):
@@ -44,15 +22,6 @@ def trans_cookies(cookies_str):
     # cookies = {i.split('=')[0]: '='.join(i.split('=')[1:]) for i in cookies_str.split('; ')}
     return cookies
 
-
-def generate_Xbogus(query):
-    Xbogus = tiktok_js.call('getXBogus', query)
-    return Xbogus
-
-
-def generate_signature():
-    signature = tiktok_js.call()
-    return signature
 
 def splice_params(params):
     splice_url = ''
@@ -97,12 +66,17 @@ def generate_html_headers(referer):
         "user-agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/132.0.0.0 Safari/537.36"
     }
 def generate_requests(url, params, cookies_str):
-    splice_params_str = splice_params(params)
-    params['X-Bogus'] = generate_Xbogus(splice_params_str)
-    params['_signature'] = ''
-    splice_params_str = splice_params(params)
-    url = url + '?' + splice_params_str
-    return url, generate_request_headers(cookies_str)
+    """Disable the pre-refactor X-Bogus-only request helper.
+
+    The old helper could silently send a Chrome-132-shaped request with an
+    empty ``_signature`` and no current ``X-Gnarly``/``X-Dynosaur`` context.
+    Keeping that wire path alive would violate the evidence-first contract;
+    callers must use :class:`api.tiktok_web.TiktokWebAPI`, which signs the
+    complete unsigned request and fails closed when browser evidence is absent.
+    """
+    raise RuntimeError(
+        "旧 X-Bogus-only 请求入口已禁用；请使用 TiktokWebAPI 的完整浏览器请求签名路径"
+    )
 
 
 def send_live_room_message(self, myid, toid, message):

@@ -7,28 +7,20 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 
 WORKDIR /app
 
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    build-essential \
-    ca-certificates \
-    nodejs \
-    npm \
-    pkg-config \
-    libcairo2-dev \
-    libpango1.0-dev \
-    libjpeg62-turbo-dev \
-    libgif-dev \
-    librsvg2-dev \
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends ca-certificates nodejs \
     && rm -rf /var/lib/apt/lists/*
 
 COPY requirements.txt ./
 RUN pip install -r requirements.txt
 
-COPY static/package.json static/package-lock.json ./static/
-RUN cd static && npm ci --omit=dev
-
 COPY api ./api
+COPY builder ./builder
+COPY signing ./signing
+COPY reverse/tiktok_shop_bsid/env ./reverse/tiktok_shop_bsid/env
 COPY static ./static
 COPY utils ./utils
+COPY demo.py ./
 COPY README.md ./
 
 CMD ["python", "-c", "import api.tiktok, api.tiktok_chat; print('TikTok Reverse API image ready')"]
